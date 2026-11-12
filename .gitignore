@@ -42,3 +42,8 @@ Dump/
 generated-aarch64/
 liblasgame.so
 *.apk
+
+# Probe logs
+tools/probe_*.log
+probe_*.log
+venv/

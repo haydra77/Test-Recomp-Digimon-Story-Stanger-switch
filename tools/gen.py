@@ -556,6 +556,9 @@ def main():
     # with -mllvm -disable-licm-promotion (tools/android/gamelib_id.sh --split-flags), the rest unchanged.
     ap.add_argument('--split-dispatch', type=int, default=0)
     ap.add_argument('--hot')  # (a relative path is next to this script)
+    # Feasibility test for a game this tree has no address table for: print the main build ID and lift anyway, without
+    # the game patches (tools/patches.py). The C it writes is NOT usable as game code; read the log, not the output.
+    ap.add_argument('--probe', action='store_true')
     args = ap.parse_args()
     global SHIFT, HOT
     SHIFT = args.shift
@@ -572,11 +575,16 @@ def main():
         try:
             version = game_addresses.select_build_id(m.nso.build_id)
         except game_addresses.UnknownGameVersion as e:
-            sys.exit(f'{args.name}: {e}')
-        import patches
-        HOOKS, PATCHES = patches.HOOKS, patches.PATCHES
-        label, build_id = game_addresses.VERSIONS[version]
-        print(f'{args.name}: game version {label} (build {build_id[:16]}), address table {version}', file=sys.stderr)
+            if not args.probe:
+                sys.exit(f'{args.name}: {e}')
+            version = None
+            print(f'{args.name}: PROBE: main build ID {m.nso.build_id.upper()} has no address table; lifting '
+                  f'without the game patches (output is not usable as game code)', file=sys.stderr)
+        if version is not None:
+            import patches
+            HOOKS, PATCHES = patches.HOOKS, patches.PATCHES
+            label, build_id = game_addresses.VERSIONS[version]
+            print(f'{args.name}: game version {label} (build {build_id[:16]}), address table {version}', file=sys.stderr)
     starts = m.boundaries()
     hle = {}
     if args.hle and os.path.exists(args.hle):
@@ -706,7 +714,7 @@ def main():
         f.write('};\n')
         f.write(f'const uint64_t {args.name}_fn_count = {len(order)};\n')
         write_if_changed(os.path.join(args.outdir, f'{args.name}_table.c'), f.getvalue())
-    if args.name == 'main':  # (what this code was generated from: the Makefile's game code library id, GAMELIB_BUILD_ID)
+    if args.name == 'main' and version is not None:  # (what this code was generated from: the Makefile's game code library id, GAMELIB_BUILD_ID)
         write_if_changed(os.path.join(args.outdir, 'main_build_id.txt'), game_addresses.VERSIONS[version][1] + '\n')
     print(f'{args.name}: wrote {nchunks} chunks ({nsplit} split dispatch), {time.time() - t0:.0f}s total', file=sys.stderr)
 
