@@ -1,0 +1,150 @@
+// LAS Recomp for Android: libmain.so (the runtime) + libSDL3.so, built by app/CMakeLists.txt (needs
+// tools/android/build_deps.sh first). No game code in here: liblasgame.so is built from the player's own game files by
+// tools/android/build_game.sh and either packed into a personal APK (-PlasGameLib=<dir with liblasgame.so>) or copied
+// to the app's internal storage.
+plugins {
+    id 'com.android.application'
+}
+
+def sdl = file('../../build/android/SDL3/android-project/app/src/main/java')
+// -PonDeviceBuild=true: the APK builds the game code on the phone from the player's own game files
+// (docs/android-ondevice-build.md): python, zig and the generator's libraries as lib*.so (extracted at install: Android
+// runs programs only from the native library folder) + assets/ondevice.zip and the license texts, all from
+// tools/android/ondevice/build_all.sh (build/ondevice/). ~70 MB more APK; the public APK is built with it, dev builds
+// can leave it out.
+def onDevice = (project.findProperty('onDeviceBuild') ?: 'false') == 'true'
+def ondev = file('../../build/ondevice')
+if (onDevice && !(new File(ondev, 'stage/jniLibs/arm64-v8a/libzig.so').exists() && new File(ondev, 'assets/ondevice.zip').exists()))
+    throw new GradleException('-PonDeviceBuild: run tools/android/ondevice/build_all.sh first')
+
+android {
+    namespace 'com.lasrecomp.android'
+    compileSdk 36
+    ndkVersion '27.2.12479018'
+
+    defaultConfig {
+        applicationId 'com.lasrecomp.android'
+        // -PlasTestId: installed beside the app (its own data folder; for testing on a phone that has it)
+        if (project.hasProperty('lasTestId')) applicationIdSuffix '.test'
+        minSdk 30          // Android 11: Vulkan 1.1+, AAudio, MAP_FIXED_NOREPLACE kernels
+        targetSdk 36
+        versionCode((project.findProperty('lasVersionCode') ?: '1') as int)
+        versionName project.findProperty('lasVersionName') ?: 'beta_4-android1'
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+        manifestPlaceholders = [extractNativeLibs: onDevice ? 'true' : 'false']
+        externalNativeBuild {
+            cmake {
+                targets 'main', 'SDL3-shared', 'main_hook', 'hook_impl'  // + libadrenotools' hooks (custom GPU drivers)
+                arguments '-DANDROID_STL=c++_static'
+            }
+        }
+    }
+
+    // A release key for APKs you share: android/keystore.properties with storeFile, storePassword, keyAlias,
+    // keyPassword (never commit it or the key). Without it, release builds use the local debug key (personal builds).
+    def keystoreProps = rootProject.file('keystore.properties')
+    signingConfigs {
+        if (keystoreProps.exists()) {
+            release {
+                def p = new Properties()
+                keystoreProps.withInputStream { p.load(it) }
+                storeFile file(p.getProperty('storeFile'))
+                storePassword p.getProperty('storePassword')
+                keyAlias p.getProperty('keyAlias')
+                keyPassword p.getProperty('keyPassword')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig keystoreProps.exists() ? signingConfigs.release : signingConfigs.debug
+            externalNativeBuild { cmake { arguments '-DCMAKE_BUILD_TYPE=Release' } }
+        }
+        debug {
+            // the runtime is unusably slow at -O0: keep debug info but optimize
+            externalNativeBuild { cmake { arguments '-DCMAKE_BUILD_TYPE=RelWithDebInfo' } }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path file('CMakeLists.txt')
+            buildStagingDirectory file('../../build/android/cxx')
+        }
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs += [sdl]
+            assets.srcDirs += ["$buildDir/generated/las-assets"]
+            // a personal build with the game code inside (tools/android/build_game.sh --apk)
+            if (project.hasProperty('lasGameLib')) jniLibs.srcDirs += [project.property('lasGameLib')]
+            // a personal build with the Brazilian Portuguese fan translation inside (build_game.sh --apk, when
+            // translations/pt-BR exists): LasActivity installs it on first start. Never in the public APK.
+            if (project.hasProperty('lasTranslation')) assets.srcDirs += ["$buildDir/generated/las-translation"]
+            // the Brazilian Portuguese fan translation as a patch against the player's own game files
+            // (tools/translation_patch.py): nothing of the game inside, so the public APK can carry it - the app makes
+            // the translated files from the player's own once they are set up (LasActivity.applyTranslationPatch)
+            if (project.hasProperty('lasTranslationPatch')) assets.srcDirs += ["$buildDir/generated/las-translation-patch"]
+            if (onDevice) {
+                jniLibs.srcDirs += ["$ondev/stage/jniLibs"]
+                assets.srcDirs += ["$ondev/assets"]
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packaging {
+        jniLibs {
+            // stored uncompressed and mapped directly from the APK; the on-phone build: compressed in the APK and
+            // extracted at install (its programs must be files to run)
+            useLegacyPackaging onDevice
+        }
+    }
+}
+
+// What the app ships besides code (runtime/paths.c android_resources): the start screen font and the icon
+tasks.register('lasAssets', Sync) {  // (Sync: a file gone from the sources goes from the APK too)
+    from('../../third_party/fonts/Baloo2/Baloo2-SemiBold.ttf')
+    from('../../third_party/fonts/DejaVu/DejaVuSans.ttf')  // (the game text's font without the user's Switch fonts)
+    from('../../docs/icon/icon_1024.png') { rename { 'icon.png' } }
+    // Mesa Turnip for Adreno phones whose own driver is older than Vulkan 1.3 (GpuDrivers.auto; build_deps.sh)
+    from('../../build/android/deps/turnip') { into 'turnip' }
+    into "$buildDir/generated/las-assets"
+}
+preBuild.dependsOn lasAssets
+
+if (project.hasProperty('lasTranslationPatch')) {
+    tasks.register('lasTranslationPatchAssets', Sync) {
+        from(project.property('lasTranslationPatch')) { into 'translation'; rename { 'pt-BR.lasp' } }
+        into "$buildDir/generated/las-translation-patch"
+    }
+    preBuild.dependsOn lasTranslationPatchAssets
+}
+
+if (project.hasProperty('lasTranslation')) {
+    tasks.register('lasTranslationAssets', Sync) {
+        from(project.property('lasTranslation')) { into 'translations/pt-BR' }
+        into "$buildDir/generated/las-translation"
+    }
+    preBuild.dependsOn lasTranslationAssets
+}
+
+// The on-phone build's kit and asset archive again from this checkout's sources (quick: python and zig stay built), so
+// the headers and the generator inside the APK are the ones its game code id (tools/android/gamelib_id.sh) is made from
+// (-PlasOnDeviceKitReady: build/ondevice as it is - e.g. a release's kit with its generator files brought up to date)
+if (onDevice && !project.hasProperty('lasOnDeviceKitReady')) {
+    tasks.register('lasOnDeviceAssets', Exec) {
+        workingDir file('../..')
+        commandLine 'bash', '-c', 'tools/android/ondevice/build_cckit.sh && tools/android/ondevice/make_assets.sh'
+    }
+    preBuild.dependsOn lasOnDeviceAssets
+}

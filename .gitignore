@@ -1,0 +1,44 @@
+# your own game files and what's made from them (building from source puts them here)
+input/
+extracted/
+generated/
+generated-*/
+/rando/
+# fan translations the player brings (game files, modified: never in the repo)
+/translations/
+# Nintendo fonts (users import their own; only the README ships)
+/fonts/*
+!/fonts/README.md
+# build output, caches, saves and settings
+build/
+/cache/
+save/
+/larecomp.ini
+/gamecontrollerdb.txt
+# tools and Python environments (machine-specific)
+tools/venv
+venv/
+__pycache__/
+.DS_Store
+# Android: machine paths, release keys, Gradle state
+android/local.properties
+android/keystore.properties
+android/.gradle/
+android/app/build/
+android/app/.cxx/
+
+# Never commit game data, keys or anything derived from the game binary
+*.nsp
+*.xci
+*.nca
+*.nso
+*.nro
+prod.keys
+title.keys
+keys.txt
+exefs/
+romfs/
+Dump/
+generated-aarch64/
+liblasgame.so
+*.apk

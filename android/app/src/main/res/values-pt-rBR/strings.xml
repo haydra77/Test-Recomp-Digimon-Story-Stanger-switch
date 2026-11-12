@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LAS Recomp</string>
+    <string name="import_title">Copiando os arquivos do jogo</string>
+    <string name="import_failed">Não foi possível copiar os arquivos do jogo: %1$s</string>
+    <string name="build_channel">Compilação do código do jogo</string>
+    <string name="build_title">Recompilando o jogo</string>
+    <string name="driver_error_title">Erro do driver gráfico</string>
+    <string name="driver_install">Instalar driver de GPU</string>
+    <string name="driver_system">Usar o driver do sistema</string>
+    <string name="driver_close">Fechar</string>
+    <string name="driver_installed">Driver instalado: o LAS Recomp abre de novo com ele.</string>
+    <string name="driver_install_failed">O driver não foi instalado: %1$s</string>
+    <string name="play_channel">Sessão de jogo</string>
+    <string name="play_title">LAS Recomp aberto</string>
+    <string name="play_text">O jogo espera pausado onde você parou.</string>
+</resources>
